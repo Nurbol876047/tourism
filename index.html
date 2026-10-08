@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Есте сақтау жолы — тарихи жады орындарының маршруты</title>
+  <meta name="description" content="Есте сақтау жолы — Қазақстандағы тарихи жады орындарына (қуғын-сүргін, ядролық сынақтар, ашаршылық) арналған ИИ маршрут жасаушы.">
+
+  <!-- Leaflet (карта) через CDN, ключ не нужен -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ---------- Цвета и общие переменные (приглушённая тёмно-серая палитра) ---------- */
+    :root {
+      --bg: #17191c;
+      --panel: #202327;
+      --panel-2: #272b30;
+      --border: #343a40;
+      --text: #eceef0;
+      --text-dim: #b3b8be;
+      --c-repressions: #5f7488;
+      --c-nuclear: #6f8c5f;
+      --c-famine: #b08a45;
+      --accent: #a7a9ac;       /* спокойный светло-серый */
+      --accent-warm: #b4a58e;  /* приглушённый песочный для тонких акцентов */
+      --error: #c08a84;
+      --radius: 6px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    /* ---------- Шапка ---------- */
+    header {
+      padding: 28px 32px 22px;
+      border-bottom: 1px solid var(--border);
+      background: #1c1f22;
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 1.7rem;
+      font-weight: 600;
+      letter-spacing: .02em;
+    }
+    header p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: .97rem;
+    }
+
+    /* ---------- Сетка страницы: слева форма, справа карта и результаты ---------- */
+    main {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 28px;
+      padding: 28px 32px 48px;
+      max-width: 1400px;
+      margin: 0 auto;
+      align-items: start;
+    }
+
+    /* ---------- Форма ---------- */
+    form {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      position: sticky;
+      top: 16px;
+    }
+    .field { margin-bottom: 18px; }
+    label.title, legend {
+      display: block;
+      margin-bottom: 7px;
+      font-size: .85rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      padding: 0;
+    }
+    fieldset { border: 0; padding: 0; margin: 0 0 18px; }
+
+    /* Поисковый выпадающий список (combobox) для пункта отправления */
+    .combo { position: relative; }
+    .combo-list {
+      display: none;
+      position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+      max-height: 300px; overflow-y: auto;
+      background: #2c3035;
+      border: 1px solid #4b5158;
+      border-radius: var(--radius);
+      box-shadow: 0 8px 20px rgba(0,0,0,.5);
+      z-index: 1000;
+    }
+    .combo-list.open { display: block; }
+    .combo-item {
+      padding: 9px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #373c42;
+    }
+    .combo-item:last-child { border-bottom: 0; }
+    .combo-item.active, .combo-item:hover { background: #3b4148; }
+    .combo-item .name { font-size: .97rem; color: #f2f3f4; }
+    .combo-item .tag {
+      margin-left: 8px; padding: 1px 7px;
+      font-size: .72rem; color: #d9c7a6;
+      border: 1px solid #5d5545; border-radius: 10px;
+    }
+    .combo-item .region { font-size: .8rem; color: var(--text-dim); }
+    .combo-empty { padding: 12px; color: var(--text-dim); font-size: .9rem; }
+    .hint { margin-top: 5px; font-size: .78rem; color: #8b9198; }
+
+    select, input[type="number"], input.combo-input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font: inherit;
+    }
+    select:focus, input:focus, button:focus-visible {
+      outline: 2px solid var(--accent-warm);
+      outline-offset: 1px;
+    }
+
+    .check {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 7px 0;
+      cursor: pointer;
+      font-size: .95rem;
+    }
+    .check input { margin-top: 5px; accent-color: #8a8d91; }
+
+    button#submit {
+      width: 100%;
+      padding: 12px;
+      background: #3a3f45;
+      color: #eceef0;
+      border: 1px solid #4b5158;
+      border-radius: var(--radius);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    button#submit:hover:not(:disabled) { background: #464c53; }
+    button#submit:disabled { opacity: .55; cursor: wait; }
+
+    /* Индикатор загрузки */
+    #loader {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      color: var(--text-dim);
+      font-size: .9rem;
+    }
+    #loader.active { display: flex; }
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Сообщение об ошибке */
+    #error {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px solid #5a3f3c;
+      border-left: 3px solid var(--error);
+      background: #2a2223;
+      color: #e0c3bf;
+      border-radius: var(--radius);
+      font-size: .92rem;
+    }
+    #error.active { display: block; }
+
+    /* ---------- Карта ---------- */
+    /* Лёгкое обесцвечивание тайлов OpenStreetMap (без затемнения — подписи остаются чёткими) */
+    .leaflet-tile-pane { filter: saturate(.45) contrast(1.05); }
+    #map {
+      height: 520px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius) var(--radius) 0 0;
+      background: #e4e6e8;
+    }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: #fdfdfd;
+      color: #1d2227;
+    }
+    .leaflet-popup-content { margin: 14px 16px; font-size: .95rem; line-height: 1.55; }
+    .leaflet-popup-content h3 { margin: 0 0 6px; font-size: 1.05rem; color: #14181c; }
+    .leaflet-popup-content p { margin: 0; color: #3a4148; }
+
+    /* Маркер с номером остановки: крупный, цвет зависит от категории, белая обводка */
+    .num-marker {
+      color: #fff;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 1.05rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,.55);
+    }
+    .num-marker.repressions { background: var(--c-repressions); }
+    .num-marker.nuclear     { background: var(--c-nuclear); }
+    .num-marker.famine      { background: var(--c-famine); }
+
+    /* Легенда под картой */
+    .legend {
+      display: flex; flex-wrap: wrap; gap: 8px 22px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-top: 0;
+      border-radius: 0 0 var(--radius) var(--radius);
+      font-size: .88rem;
+      color: var(--text);
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 8px; }
+    .legend i { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 2px solid #fff; }
+    .legend .repressions i { background: var(--c-repressions); }
+    .legend .nuclear i { background: var(--c-nuclear); }
+    .legend .famine i { background: var(--c-famine); }
+
+    /* ---------- Результаты ---------- */
+    #results { margin-top: 28px; display: none; }
+    #results.active { display: block; }
+    #route-title { font-size: 1.35rem; font-weight: 600; margin: 0 0 20px; }
+
+    .day { margin-bottom: 28px; }
+    .day h2 {
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--accent-warm);
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin: 0 0 14px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 3px solid #6b7076;
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .card.repressions { border-left-color: #8d8f93; }
+    .card.nuclear     { border-left-color: #8f9a88; }
+    .card.famine      { border-left-color: #a39378; }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: baseline;
+    }
+    .card h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+    .card .time { color: #d9c7a6; font-size: 1rem; font-weight: 600; white-space: nowrap; }
+    .card .city { color: var(--text-dim); font-size: .92rem; margin: 2px 0 10px 44px; }
+    .card p { margin: 0 0 14px; font-size: 1.05rem; line-height: 1.65; color: #f2f3f4; }
+    .card { cursor: pointer; transition: background .2s; }
+    .card:hover { background: #262a2f; }
+    .card .title-wrap { display: flex; align-items: center; gap: 12px; }
+    .badge {
+      flex: none; width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; border: 2px solid #fff;
+    }
+    .badge.repressions { background: var(--c-repressions); }
+    .badge.nuclear     { background: var(--c-nuclear); }
+    .badge.famine      { background: var(--c-famine); }
+    .card h4 {
+      margin: 0 0 6px;
+      font-size: .78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-dim);
+    }
+    .card ul { margin: 0; padding-left: 22px; font-size: 1rem; color: #e4e6e8; }
+    .card li { margin-bottom: 5px; }
+    .hours { margin-top: 12px; font-size: .9rem; color: var(--text-dim); }
+
+    /* Блок «Неге бұл маңызды?» */
+    .why {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+    }
+    .why h2 { margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; }
+    .why p { margin: 0; font-style: italic; color: #c7c9cc; }
+
+    footer {
+      text-align: center;
+      padding: 0 20px 28px;
+      color: #6f757b;
+      font-size: .8rem;
+    }
+
+    /* ---------- Телефон: всё в одну колонку, карта под формой ---------- */
+    @media (max-width: 860px) {
+      main { grid-template-columns: 1fr; padding: 18px 16px 36px; gap: 20px; }
+      form { position: static; }
+      header { padding: 22px 16px 18px; }
+      header h1 { font-size: 1.4rem; }
+      #map { height: 360px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Есте сақтау жолы</h1>
+    <p>Қазақстанның тарихи жады орындары бойынша жеке маршрут жасайтын ИИ көмекші.</p>
+  </header>
+
+  <main>
+    <!-- ===== Форма ===== -->
+    <form id="route-form" novalidate>
+      <div class="field">
+        <label class="title" for="city">Шығатын қала</label>
+        <div class="combo">
+          <input type="text" id="city" class="combo-input" autocomplete="off"
+                 placeholder="Қала, аудан немесе ауылды іздеңіз…"
+                 role="combobox" aria-expanded="false" aria-controls="city-list">
+          <div id="city-list" class="combo-list" role="listbox"></div>
+        </div>
+        <div class="hint">Іздеу мүмкін: «ҚЗО», «Қазалы», «Пырымов», «Кумжиек»…</div>
+      </div>
+
+      <div class="field">
+        <label class="title" for="days">Күн саны</label>
+        <input type="number" id="days" name="days" min="1" max="5" value="2">
+      </div>
+
+      <div class="field">
+        <label class="title" for="age_group">Жас тобы</label>
+        <select id="age_group" name="age_group">
+          <option value="оқушы">Оқушы</option>
+          <option value="ересек">Ересек</option>
+          <option value="шетелдік турист">Шетелдік турист</option>
+        </select>
+      </div>
+
+      <fieldset>
+        <legend>Қызығушылық</legend>
+        <label class="check"><input type="checkbox" name="interests" value="repressions" checked> Саяси қуғын-сүргін</label>
+        <label class="check"><input type="checkbox" name="interests" value="nuclear"> Ядролық сынақтар</label>
+        <label class="check"><input type="checkbox" name="interests" value="famine"> 1930-жылдардағы ашаршылық</label>
+      </fieldset>
+
+      <button type="submit" id="submit">Маршрут құру</button>
+
+      <div id="loader" role="status" aria-live="polite">
+        <div class="spinner"></div>
+        <span>Маршрут құрастырылуда…</span>
+      </div>
+      <div id="error" role="alert"></div>
+    </form>
+
+    <!-- ===== Карта и результаты ===== -->
+    <section aria-label="Карта және маршрут">
+      <div id="map"></div>
+      <div class="legend" aria-label="Карта шартты белгілері">
+        <span class="repressions"><i></i> Саяси қуғын-сүргін</span>
+        <span class="nuclear"><i></i> Ядролық сынақтар</span>
+        <span class="famine"><i></i> Ашаршылық</span>
+      </div>
+
+      <div id="results">
+        <h2 id="route-title"></h2>
+        <div id="days-container"></div>
+        <aside class="why">
+          <h2>Неге бұл маңызды?</h2>
+          <p id="why-text"></p>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer>Мектептің ғылыми жобасы · 9-сынып</footer>
+
+<script>
+  // ============================================================
+  // 1. Карта (Leaflet + OpenStreetMap)
+  // ============================================================
+  // Центр Казахстана и масштаб, чтобы вся страна помещалась на карте
+  const map = L.map('map').setView([48.0, 67.0], 5);
+  // Стандартные тайлы OpenStreetMap: бесплатные, ключ не нужен.
+  // (Тайлы CARTO теперь требуют API-ключ, поэтому от них отказались.)
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; участники <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
+
+  // Отдельный слой для маркеров и линии — его удобно очищать при новом маршруте
+  const routeLayer = L.layerGroup().addTo(map);
+  // Словарь id объекта -> маркер (чтобы по клику на карточку показать маркер на карте)
+  const markers = {};
+
+  // ============================================================
+  // 2. Вспомогательные функции
+  // ============================================================
+  const form = document.getElementById('route-form');
+  const submitBtn = document.getElementById('submit');
+  const loader = document.getElementById('loader');
+  const errorBox = document.getElementById('error');
+  const resultsBox = document.getElementById('results');
+
+  // Создаёт DOM-элемент. Текст вставляем через textContent,
+  // поэтому текст от ИИ не может внедрить HTML-код (защита от XSS).
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add('active');
+  }
+
+  function setLoading(isLoading) {
+    loader.classList.toggle('active', isLoading);
+    submitBtn.disabled = isLoading;
+  }
+
+  // ============================================================
+  // 3. Отрисовка карты: маркеры по порядку + линия между ними
+  // ============================================================
+  function drawMap(days) {
+    routeLayer.clearLayers();
+    Object.keys(markers).forEach(k => delete markers[k]);
+    const points = [];
+    let number = 1;
+
+    days.forEach(day => {
+      day.stops.forEach(stop => {
+        const latlng = [stop.lat, stop.lng];
+        points.push(latlng);
+
+        // Крупный круглый маркер с номером; цвет зависит от категории
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="num-marker ${stop.category}">${number}</div>`,
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+          popupAnchor: [0, -18]
+        });
+
+        // Всплывающее окно: название и описание (через DOM — без риска HTML-вставок)
+        const popup = el('div');
+        popup.appendChild(el('h3', '', stop.name_kz));
+        popup.appendChild(el('p', '', stop.description_kz));
+
+        const marker = L.marker(latlng, { icon })
+          .bindPopup(popup, { maxWidth: 300 })
+          .bindTooltip(stop.name_kz, { direction: 'top', offset: [0, -16] })
+          .addTo(routeLayer);
+        markers[stop.id] = marker;
+        number++;
+      });
+    });
+
+    // Линия между объектами в порядке маршрута: белая подложка + тёмная линия сверху,
+    // чтобы она хорошо читалась на любом фоне. Рисуем в панели 'shadowPane':
+    // она лежит выше тайлов карты, но ниже маркеров, поэтому номера не перекрываются.
+    if (points.length > 1) {
+      L.polyline(points, { color: '#ffffff', weight: 8, opacity: .9, pane: 'shadowPane' }).addTo(routeLayer);
+      L.polyline(points, { color: '#2b3540', weight: 4, opacity: 1, pane: 'shadowPane' }).addTo(routeLayer);
+    }
+    // Масштабируем карту так, чтобы все точки были видны
+    map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 9 });
+  }
+
+  // ============================================================
+  // 4. Отрисовка карточек по дням
+  // ============================================================
+  function drawCards(data) {
+    document.getElementById('route-title').textContent = data.title;
+    document.getElementById('why-text').textContent = data.why_important;
+
+    const container = document.getElementById('days-container');
+    container.innerHTML = '';
+
+    let number = 1; // сквозной номер остановки — совпадает с номером на карте
+
+    data.days.forEach(day => {
+      const dayBox = el('section', 'day');
+      dayBox.appendChild(el('h2', '', `${day.day}-күн`));
+
+      day.stops.forEach(stop => {
+        const card = el('article', 'card ' + stop.category);
+
+        const head = el('div', 'card-head');
+        // Номер-значок + название объекта
+        const titleWrap = el('div', 'title-wrap');
+        titleWrap.appendChild(el('span', 'badge ' + stop.category, String(number)));
+        titleWrap.appendChild(el('h3', '', stop.name_kz));
+        head.appendChild(titleWrap);
+        head.appendChild(el('span', 'time', stop.time));
+        card.appendChild(head);
+
+        card.appendChild(el('div', 'city', stop.city));
+        card.appendChild(el('p', '', stop.note || stop.description_kz));
+
+        if (stop.rules.length) {
+          card.appendChild(el('h4', '', 'Мінез-құлық ережелері'));
+          const ul = el('ul');
+          stop.rules.forEach(rule => ul.appendChild(el('li', '', rule)));
+          card.appendChild(ul);
+        }
+
+        card.appendChild(el('div', 'hours', 'Жұмыс уақыты: ' + stop.visit_hours));
+
+        // Клик по карточке — приближаем карту к объекту и открываем окно
+        card.addEventListener('click', () => {
+          const marker = markers[stop.id];
+          if (!marker) return;
+          document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          map.flyTo([stop.lat, stop.lng], 11, { duration: 1 });
+          marker.openPopup();
+        });
+
+        dayBox.appendChild(card);
+        number++;
+      });
+
+      container.appendChild(dayBox);
+    });
+
+    resultsBox.classList.add('active');
+  }
+
+  // ============================================================
+  // 4.1. Поисковый список «Шығатын қала» (combobox)
+  // ============================================================
+  // Список городов, аудандар и ауылдар берётся с сервера (GET /api/cities, файл cities.json)
+  const cityInput = document.getElementById('city');
+  const cityList = document.getElementById('city-list');
+  let allCities = [];
+  let selectedCity = null;   // выбранный объект из cities.json (или null)
+  let visibleCities = [];    // что сейчас показано в выпадающем списке
+  let activeIndex = -1;      // подсвеченный пункт (стрелками клавиатуры)
+
+  // Приводим текст к нижнему регистру, «ё» = «е» — чтобы поиск не зависел от регистра
+  const norm = s => s.toLowerCase().replace(/ё/g, 'е');
+
+  // Подходит ли пункт под запрос: ищем в названии, области и русских вариантах названия
+  function cityMatches(c, query) {
+    const terms = [c.name, c.region, ...(c.aliases || [])];
+    // Для всех пунктов ҚЗО добавляем ключевые слова «қзо», «кзо» и «кызылординская область»
+    if (c.region.startsWith('Қызылорда облысы')) terms.push('қзо', 'кзо', 'кызылординская область');
+    return terms.some(t => norm(t).includes(query));
+  }
+
+  // Фильтруем список: сначала те, у кого название начинается с запроса
+  function filterCities(text) {
+    const query = norm(text.trim());
+    if (!query) return allCities;
+    const found = allCities.filter(c => cityMatches(c, query));
+    const starts = found.filter(c => norm(c.name).startsWith(query));
+    return [...starts, ...found.filter(c => !starts.includes(c))];
+  }
+
+  function renderCityList() {
+    cityList.innerHTML = '';
+    if (visibleCities.length === 0) {
+      cityList.appendChild(el('div', 'combo-empty', 'Ештеңе табылмады'));
+      return;
+    }
+    visibleCities.forEach((c, i) => {
+      const item = el('div', 'combo-item' + (i === activeIndex ? ' active' : ''));
+      item.setAttribute('role', 'option');
+      const line = el('div');
+      line.appendChild(el('span', 'name', c.name));
+      line.appendChild(el('span', 'tag', c.type));
+      item.appendChild(line);
+      item.appendChild(el('div', 'region', c.region));
+      // mousedown (а не click), чтобы выбор сработал до потери фокуса полем
+      item.addEventListener('mousedown', e => { e.preventDefault(); chooseCity(c); });
+      cityList.appendChild(item);
+    });
+    const active = cityList.querySelector('.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function openCityList() {
+    visibleCities = filterCities(selectedCity ? '' : cityInput.value);
+    activeIndex = -1;
+    renderCityList();
+    cityList.classList.add('open');
+    cityInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeCityList() {
+    cityList.classList.remove('open');
+    cityInput.setAttribute('aria-expanded', 'false');
+  }
+
+  function chooseCity(c) {
+    selectedCity = c;
+    cityInput.value = c.name;
+    closeCityList();
+  }
+
+  // При вводе текста выбор сбрасываем и обновляем список подсказок
+  cityInput.addEventListener('input', () => {
+    selectedCity = null;
+    visibleCities = filterCities(cityInput.value);
+    activeIndex = visibleCities.length ? 0 : -1;
+    renderCityList();
+    cityList.classList.add('open');
+  });
+  cityInput.addEventListener('focus', () => { cityInput.select(); openCityList(); });
+  cityInput.addEventListener('click', () => { if (!cityList.classList.contains('open')) openCityList(); });
+  cityInput.addEventListener('blur', closeCityList);
+
+  // Управление с клавиатуры: стрелки, Enter, Escape
+  cityInput.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!cityList.classList.contains('open')) return openCityList();
+      if (!visibleCities.length) return;
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      activeIndex = (activeIndex + step + visibleCities.length) % visibleCities.length;
+      renderCityList();
+    } else if (e.key === 'Enter' && cityList.classList.contains('open')) {
+      e.preventDefault();                      // Enter выбирает пункт, а не отправляет форму
+      if (visibleCities[activeIndex]) chooseCity(visibleCities[activeIndex]);
+    } else if (e.key === 'Escape') {
+      closeCityList();
+    }
+  });
+
+  // Загружаем список с сервера; по умолчанию выбран Алматы
+  fetch('/api/cities')
+    .then(r => r.json())
+    .then(list => {
+      allCities = list;
+      const def = list.find(c => c.name === 'Алматы');
+      if (def) chooseCity(def);
+    })
+    .catch(() => showError('Қалалар тізімін жүктеу мүмкін болмады.'));
+
+  // ============================================================
+  // 5. Отправка формы на сервер
+  // ============================================================
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.classList.remove('active');
+
+    // Собираем значения формы
+    const interests = [...form.querySelectorAll('input[name="interests"]:checked')].map(i => i.value);
+    const days = parseInt(form.days.value, 10);
+
+    // Пункт отправления должен быть выбран из списка. Если текст введён вручную —
+    // пробуем найти точное совпадение или единственный вариант поиска.
+    if (!selectedCity) {
+      const matches = filterCities(cityInput.value);
+      const exact = allCities.find(c => norm(c.name) === norm(cityInput.value.trim()));
+      const found = exact || (matches.length === 1 ? matches[0] : null);
+      if (found) chooseCity(found);
+    }
+    if (!selectedCity) {
+      return showError('Шығатын қаланы тізімнен таңдаңыз.');
+    }
+
+    // Простая проверка на стороне браузера (сервер проверяет ещё раз)
+    if (!days || days < 1 || days > 5) {
+      return showError('Күн саны 1 мен 5 аралығында болуы керек.');
+    }
+    if (interests.length === 0) {
+      return showError('Кемінде бір қызығушылықты таңдаңыз.');
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch('/api/route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          city: selectedCity.name,
+          days: days,
+          age_group: form.age_group.value,
+          interests: interests
+        })
+      });
+      const data = await response.json();
+
+      // Сервер вернул ошибку (сообщение уже на казахском)
+      if (!response.ok) {
+        resultsBox.classList.remove('active');
+        return showError(data.error || 'Белгісіз қате болды.');
+      }
+
+      drawMap(data.days);
+      drawCards(data);
+      resultsBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      // Сервер недоступен
+      showError('Серверге қосылу мүмкін болмады. Қолданба іске қосылғанын тексеріңіз.');
+    } finally {
+      setLoading(false);
+    }
+  });
+</script>
+</body>
+</html>
