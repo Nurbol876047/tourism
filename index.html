@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Есте сақтау жолы — тарихи жады орындарының маршруты</title>
-  <meta name="description" content="Есте сақтау жолы — Қазақстандағы тарихи жады орындарына (қуғын-сүргін, ядролық сынақтар, ашаршылық) арналған ИИ маршрут жасаушы.">
+  <meta name="description" content="Есте сақтау жолы — Қазақстандағы тарихи жады орындарына (қуғын-сүргін, ядролық сынақтар, ашаршылық, Ұлы Отан соғысы, экологиялық апаттар) арналған ИИ маршрут жасаушы.">
 
   <!-- Leaflet (карта) через CDN, ключ не нужен -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -22,6 +22,8 @@
       --c-repressions: #5f7488;
       --c-nuclear: #6f8c5f;
       --c-famine: #b08a45;
+      --c-war: #9a6358;
+      --c-ecology: #4f8a95;
       --accent: #a7a9ac;       /* спокойный светло-серый */
       --accent-warm: #b4a58e;  /* приглушённый песочный для тонких акцентов */
       --error: #c08a84;
@@ -230,6 +232,8 @@
     .num-marker.repressions { background: var(--c-repressions); }
     .num-marker.nuclear     { background: var(--c-nuclear); }
     .num-marker.famine      { background: var(--c-famine); }
+    .num-marker.war         { background: var(--c-war); }
+    .num-marker.ecology     { background: var(--c-ecology); }
 
     /* Легенда под картой */
     .legend {
@@ -247,6 +251,8 @@
     .legend .repressions i { background: var(--c-repressions); }
     .legend .nuclear i { background: var(--c-nuclear); }
     .legend .famine i { background: var(--c-famine); }
+    .legend .war i { background: var(--c-war); }
+    .legend .ecology i { background: var(--c-ecology); }
 
     /* ---------- Результаты ---------- */
     #results { margin-top: 28px; display: none; }
@@ -276,6 +282,8 @@
     .card.repressions { border-left-color: #8d8f93; }
     .card.nuclear     { border-left-color: #8f9a88; }
     .card.famine      { border-left-color: #a39378; }
+    .card.war         { border-left-color: #9a8280; }
+    .card.ecology     { border-left-color: #7fa0a6; }
 
     .card-head {
       display: flex;
@@ -299,6 +307,8 @@
     .badge.repressions { background: var(--c-repressions); }
     .badge.nuclear     { background: var(--c-nuclear); }
     .badge.famine      { background: var(--c-famine); }
+    .badge.war         { background: var(--c-war); }
+    .badge.ecology     { background: var(--c-ecology); }
     .card h4 {
       margin: 0 0 6px;
       font-size: .78rem;
@@ -381,6 +391,8 @@
         <label class="check"><input type="checkbox" name="interests" value="repressions" checked> Саяси қуғын-сүргін</label>
         <label class="check"><input type="checkbox" name="interests" value="nuclear"> Ядролық сынақтар</label>
         <label class="check"><input type="checkbox" name="interests" value="famine"> 1930-жылдардағы ашаршылық</label>
+        <label class="check"><input type="checkbox" name="interests" value="war"> Ұлы Отан соғысы</label>
+        <label class="check"><input type="checkbox" name="interests" value="ecology"> Экологиялық апаттар (Арал)</label>
       </fieldset>
 
       <button type="submit" id="submit">Маршрут құру</button>
@@ -399,6 +411,8 @@
         <span class="repressions"><i></i> Саяси қуғын-сүргін</span>
         <span class="nuclear"><i></i> Ядролық сынақтар</span>
         <span class="famine"><i></i> Ашаршылық</span>
+        <span class="war"><i></i> Ұлы Отан соғысы</span>
+        <span class="ecology"><i></i> Экология (Арал)</span>
       </div>
 
       <div id="results">
