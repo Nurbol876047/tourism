@@ -118,6 +118,15 @@
     .combo-empty { padding: 12px; color: var(--text-dim); font-size: .9rem; }
     .hint { margin-top: 5px; font-size: .78rem; color: #8b9198; }
 
+    .combo-search-btn {
+      position: absolute; right: 4px; top: 4px; bottom: 4px;
+      width: 34px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: 0; border-radius: 8px;
+      color: var(--text-dim); cursor: pointer; padding: 0;
+    }
+    .combo-search-btn:hover, .combo-search-btn:focus-visible { background: #3b4148; color: var(--text); }
+
     select, input[type="number"], input.combo-input {
       width: 100%;
       padding: 10px 12px;
@@ -127,6 +136,7 @@
       border-radius: var(--radius);
       font: inherit;
     }
+    .combo-input { padding-right: 42px; }
     select:focus, input:focus, button:focus-visible {
       outline: 2px solid var(--accent-warm);
       outline-offset: 1px;
@@ -344,6 +354,9 @@
           <input type="text" id="city" class="combo-input" autocomplete="off"
                  placeholder="Қала, аудан немесе ауылды іздеңіз…"
                  role="combobox" aria-expanded="false" aria-controls="city-list">
+          <button type="button" id="city-search-btn" class="combo-search-btn" aria-label="Іздеу">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
           <div id="city-list" class="combo-list" role="listbox"></div>
         </div>
         <div class="hint">Іздеу мүмкін: «ҚЗО», «Қазалы», «Пырымов», «Кумжиек»…</div>
@@ -565,8 +578,11 @@
   let visibleCities = [];    // что сейчас показано в выпадающем списке
   let activeIndex = -1;      // подсвеченный пункт (стрелками клавиатуры)
 
-  // Приводим текст к нижнему регистру, «ё» = «е» — чтобы поиск не зависел от регистра
-  const norm = s => s.toLowerCase().replace(/ё/g, 'е');
+  // Приводим текст к нижнему регистру, «ё» = «е», а казахские буквы (Ә Ғ Қ Ң Ө Ұ Ү Һ І)
+  // заменяем на похожие русские (А Г К Н О У У Х И) — чтобы поиск находил город независимо
+  // от того, какой буквой (казахской или русской) его набрали
+  const KZ_TO_RU = { 'ә': 'а', 'ғ': 'г', 'қ': 'к', 'ң': 'н', 'ө': 'о', 'ұ': 'у', 'ү': 'у', 'һ': 'х', 'і': 'и' };
+  const norm = s => s.toLowerCase().replace(/ё/g, 'е').replace(/[әғқңөұүһі]/g, ch => KZ_TO_RU[ch]);
 
   // Подходит ли пункт под запрос: ищем в названии, области и русских вариантах названия
   function cityMatches(c, query) {
@@ -637,6 +653,11 @@
   cityInput.addEventListener('focus', () => { cityInput.select(); openCityList(); });
   cityInput.addEventListener('click', () => { if (!cityList.classList.contains('open')) openCityList(); });
   cityInput.addEventListener('blur', closeCityList);
+
+  // Кнопка-лупа: тот же поиск, что и по клику на поле (удобно на телефоне)
+  const citySearchBtn = document.getElementById('city-search-btn');
+  citySearchBtn.addEventListener('mousedown', e => e.preventDefault()); // не терять фокус поля раньше времени
+  citySearchBtn.addEventListener('click', () => { cityInput.focus(); openCityList(); });
 
   // Управление с клавиатуры: стрелки, Enter, Escape
   cityInput.addEventListener('keydown', e => {
